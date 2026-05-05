@@ -117,15 +117,16 @@
 <div class="meta">
   <span><b>Owner:</b> ylzhang2447@outlook.com</span>
   <span><b>Created:</b> 2026-05-04</span>
-  <span><b>Notes & status save automatically to this browser.</b></span>
+  <span><b>Notes are shared in real-time across everyone viewing this page.</b></span>
+  <span id="connStatus" style="margin-left:auto; font-weight:600;">⏳ Connecting…</span>
 </div>
 
 <div class="toolbar">
-  <button onclick="exportNotes()">Export notes (JSON)</button>
-  <button onclick="document.getElementById('importFile').click()">Import notes (JSON)</button>
+  <button onclick="exportNotes()">Backup notes (JSON)</button>
+  <button onclick="document.getElementById('importFile').click()">Restore from JSON</button>
   <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importNotes(event)" />
   <button class="secondary" onclick="printPage()">Print / Save as PDF</button>
-  <button class="danger" onclick="clearAll()">Reset all notes</button>
+  <button class="danger" onclick="clearAll()">Reset all notes (everyone)</button>
 </div>
 
 <main>
@@ -137,7 +138,23 @@
   COTA = city bus · CABS = OSU free campus shuttle. Confirm prices and availability with each leasing office.
 </footer>
 
-<script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyC1rylKcYByWVx-AKLSWnJXIBiaf-a54Nc",
+  authDomain: "osu-apartment-tracker.firebaseapp.com",
+  databaseURL: "https://osu-apartment-tracker-default-rtdb.firebaseio.com",
+  projectId: "osu-apartment-tracker",
+  storageBucket: "osu-apartment-tracker.firebasestorage.app",
+  messagingSenderId: "943511012012",
+  appId: "1:943511012012:web:825f7721157f0ee3705509"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
 const APARTMENTS = [
   {
     id: "luxe-belle",
@@ -303,17 +320,11 @@ const STATUS_OPTIONS = [
 ];
 
 const grid = document.getElementById("grid");
-
-function loadState(id) {
-  try { return JSON.parse(localStorage.getItem("apt_" + id) || "{}"); }
-  catch { return {}; }
-}
-function saveState(id, state) {
-  localStorage.setItem("apt_" + id, JSON.stringify(state));
-}
+const remoteState = {};
+const localFocus = {};
+const writeTimers = {};
 
 function makeCard(a) {
-  const state = loadState(a.id);
   const card = document.createElement("div");
   card.className = "card";
   card.innerHTML = `
@@ -335,12 +346,12 @@ function makeCard(a) {
 
     <div class="status">
       <select data-id="${a.id}" data-field="status">
-        ${STATUS_OPTIONS.map(o => `<option value="${o}" ${state.status===o?"selected":""}>${o}</option>`).join("")}
+        ${STATUS_OPTIONS.map(o => `<option value="${o}">${o}</option>`).join("")}
       </select>
-      <input type="date" data-id="${a.id}" data-field="tourDate" value="${state.tourDate||""}" />
+      <input type="date" data-id="${a.id}" data-field="tourDate" value="" />
     </div>
 
-    <textarea data-id="${a.id}" data-field="notes" placeholder="Your notes — first impression, leasing agent name, quoted rent, what to ask...">${state.notes||""}</textarea>
+    <textarea data-id="${a.id}" data-field="notes" placeholder="Shared notes — visible to everyone with this link. First impression, leasing agent name, quoted rent, what to ask..."></textarea>
     <div class="saved" id="saved-${a.id}"></div>
   `;
   return card;
@@ -348,21 +359,77 @@ function makeCard(a) {
 
 APARTMENTS.forEach(a => grid.appendChild(makeCard(a)));
 
-// Auto-save handler
-document.addEventListener("input", e => {
-  const id = e.target.dataset.id;
-  const field = e.target.dataset.field;
-  if (!id || !field) return;
-  const state = loadState(id);
-  state[field] = e.target.value;
-  state.lastSaved = new Date().toLocaleString();
-  saveState(id, state);
+function applyRemoteToUI(id, data) {
+  ["status", "tourDate", "notes"].forEach(field => {
+    const el = document.querySelector(`[data-id="${id}"][data-field="${field}"]`);
+    if (!el) return;
+    if (localFocus[id + ":" + field]) return;
+    const incoming = data[field] || "";
+    if (el.value !== incoming) el.value = incoming;
+  });
   const note = document.getElementById("saved-" + id);
-  if (note) {
-    note.textContent = "Saved " + state.lastSaved;
-    clearTimeout(note._t);
-    note._t = setTimeout(() => note.textContent = "", 2500);
+  if (note && data.lastSaved) {
+    note.textContent = data.lastBy ? `${data.lastBy} · ${data.lastSaved}` : data.lastSaved;
   }
+}
+
+APARTMENTS.forEach(a => {
+  const aRef = ref(db, "apartments/" + a.id);
+  onValue(aRef, snap => {
+    const data = snap.val() || {};
+    remoteState[a.id] = data;
+    applyRemoteToUI(a.id, data);
+  });
+});
+
+const connRef = ref(db, ".info/connected");
+onValue(connRef, snap => {
+  const el = document.getElementById("connStatus");
+  if (!el) return;
+  if (snap.val()) {
+    el.textContent = "🟢 Synced";
+    el.style.color = "#16a34a";
+  } else {
+    el.textContent = "🔴 Offline — changes won't sync";
+    el.style.color = "#b91c1c";
+  }
+});
+
+document.addEventListener("focusin", e => {
+  if (e.target.dataset && e.target.dataset.id) {
+    localFocus[e.target.dataset.id + ":" + e.target.dataset.field] = true;
+  }
+});
+document.addEventListener("focusout", e => {
+  if (e.target.dataset && e.target.dataset.id) {
+    delete localFocus[e.target.dataset.id + ":" + e.target.dataset.field];
+  }
+});
+
+document.addEventListener("input", e => {
+  const id = e.target.dataset?.id;
+  const field = e.target.dataset?.field;
+  if (!id || !field) return;
+  const value = e.target.value;
+  const key = id + ":" + field;
+  clearTimeout(writeTimers[key]);
+  writeTimers[key] = setTimeout(() => {
+    const updates = {
+      ...(remoteState[id] || {}),
+      [field]: value,
+      lastSaved: new Date().toLocaleString()
+    };
+    set(ref(db, "apartments/" + id), updates).catch(err => {
+      const note = document.getElementById("saved-" + id);
+      if (note) note.textContent = "❌ Sync failed: " + err.message;
+    });
+    const note = document.getElementById("saved-" + id);
+    if (note) {
+      note.textContent = "✓ Synced";
+      clearTimeout(note._t);
+      note._t = setTimeout(() => note.textContent = "", 2500);
+    }
+  }, 500);
 });
 document.addEventListener("change", e => {
   if (e.target.dataset && e.target.dataset.id) {
@@ -370,50 +437,49 @@ document.addEventListener("change", e => {
   }
 });
 
-function exportNotes() {
+window.exportNotes = function() {
   const data = {};
-  APARTMENTS.forEach(a => data[a.id] = { name: a.name, ...loadState(a.id) });
+  APARTMENTS.forEach(a => data[a.id] = { name: a.name, ...(remoteState[a.id] || {}) });
   const blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "apartment-notes-" + new Date().toISOString().slice(0,10) + ".json";
-  a.click();
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "apartment-notes-" + new Date().toISOString().slice(0,10) + ".json";
+  link.click();
   URL.revokeObjectURL(url);
-}
+};
 
-function importNotes(event) {
+window.importNotes = function(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     try {
       const data = JSON.parse(e.target.result);
-      if (!confirm("Import will MERGE these notes into your tracker. Existing notes for the same property will be overwritten. Continue?")) return;
-      Object.keys(data).forEach(id => {
+      if (!confirm("This will OVERWRITE the SHARED notes for everyone with the data in this file. Continue?")) return;
+      for (const id of Object.keys(data)) {
         const incoming = data[id];
-        const current = loadState(id);
-        const merged = { ...current, ...incoming };
+        const merged = { ...(remoteState[id] || {}), ...incoming };
         delete merged.name;
-        saveState(id, merged);
-      });
-      alert("Notes imported. Reloading...");
-      location.reload();
+        await set(ref(db, "apartments/" + id), merged);
+      }
+      alert("Notes restored to shared database.");
     } catch (err) {
       alert("Could not import: " + err.message);
     }
   };
   reader.readAsText(file);
   event.target.value = "";
-}
+};
 
-function printPage() { window.print(); }
+window.printPage = function() { window.print(); };
 
-function clearAll() {
-  if (!confirm("Clear all your notes and statuses? This cannot be undone.")) return;
-  APARTMENTS.forEach(a => localStorage.removeItem("apt_" + a.id));
-  location.reload();
-}
+window.clearAll = async function() {
+  if (!confirm("Clear ALL shared notes for EVERYONE viewing this page? This cannot be undone.")) return;
+  for (const a of APARTMENTS) {
+    await set(ref(db, "apartments/" + a.id), null);
+  }
+};
 </script>
 </body>
 </html>
