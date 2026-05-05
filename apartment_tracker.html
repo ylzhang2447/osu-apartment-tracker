@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>OSU Math Dept — Apartment Tracker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --ink: #1c1f24;
+    --muted: #6b7280;
+    --accent: #b71c1c;     /* OSU scarlet */
+    --accent-2: #1f6feb;
+    --border: #e5e7eb;
+    --good: #16a34a;
+    --warn: #d97706;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.45;
+  }
+  header {
+    background: linear-gradient(90deg, var(--accent), #7a0d0d);
+    color: white;
+    padding: 22px 28px;
+  }
+  header h1 { margin: 0 0 4px 0; font-size: 22px; }
+  header p { margin: 0; opacity: .9; font-size: 14px; }
+  .meta {
+    display: flex; gap: 16px; flex-wrap: wrap;
+    padding: 12px 28px; background: #fff; border-bottom: 1px solid var(--border);
+    font-size: 13px; color: var(--muted);
+  }
+  .meta b { color: var(--ink); }
+  .toolbar {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    padding: 12px 28px; background: #fff; border-bottom: 1px solid var(--border);
+  }
+  .toolbar button {
+    background: var(--accent-2); color: white; border: none; padding: 6px 12px;
+    border-radius: 6px; cursor: pointer; font-size: 13px;
+  }
+  .toolbar button.secondary { background: #6b7280; }
+  .toolbar button.danger { background: #b91c1c; }
+  main { padding: 20px 28px 60px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    display: flex; flex-direction: column;
+  }
+  .card h2 {
+    margin: 0 0 4px 0; font-size: 17px; display: flex; align-items: center; gap: 8px;
+  }
+  .rank {
+    background: var(--accent); color: white; font-size: 12px;
+    border-radius: 999px; padding: 2px 8px; font-weight: 600;
+  }
+  .addr { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+  .row {
+    display: grid; grid-template-columns: 110px 1fr;
+    gap: 4px 8px; font-size: 13px; padding: 3px 0;
+  }
+  .row .k { color: var(--muted); }
+  .links { margin: 10px 0 8px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .links a {
+    color: var(--accent-2); text-decoration: none; font-size: 13px;
+    border: 1px solid var(--border); padding: 4px 8px; border-radius: 6px;
+  }
+  .links a:hover { background: #f1f5fb; }
+  .tag {
+    display: inline-block; background: #eef2ff; color: #3730a3;
+    border-radius: 4px; padding: 1px 6px; font-size: 11px; margin-right: 4px;
+  }
+  .tag.green { background: #ecfdf5; color: #065f46; }
+  .tag.amber { background: #fffbeb; color: #92400e; }
+  .status {
+    display: flex; gap: 6px; margin: 8px 0;
+  }
+  .status select, .status input[type="date"] {
+    flex: 1; font-size: 13px; padding: 4px 6px;
+    border: 1px solid var(--border); border-radius: 6px; background: white;
+  }
+  textarea {
+    width: 100%; min-height: 80px; resize: vertical;
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px;
+    font-family: inherit; font-size: 13px; margin-top: 6px;
+  }
+  .saved {
+    font-size: 11px; color: var(--good); margin-top: 4px; min-height: 14px;
+  }
+  footer {
+    text-align: center; color: var(--muted); font-size: 12px;
+    padding: 20px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>OSU Math Department — Apartment Tracker</h1>
+  <p>Math Tower: 231 W 18th Ave, Columbus, OH 43210 · Budget ~$1,600/mo · 1B1B or Studio · Gym required · No car</p>
+</header>
+
+<div class="meta">
+  <span><b>Owner:</b> ylzhang2447@outlook.com</span>
+  <span><b>Created:</b> 2026-05-04</span>
+  <span><b>Notes & status save automatically to this browser.</b></span>
+</div>
+
+<div class="toolbar">
+  <button onclick="exportNotes()">Export notes (JSON)</button>
+  <button onclick="document.getElementById('importFile').click()">Import notes (JSON)</button>
+  <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importNotes(event)" />
+  <button class="secondary" onclick="printPage()">Print / Save as PDF</button>
+  <button class="danger" onclick="clearAll()">Reset all notes</button>
+</div>
+
+<main>
+  <div class="grid" id="grid"></div>
+</main>
+
+<footer>
+  Distance estimates are walking-time approximations to Math Tower (231 W 18th Ave).
+  COTA = city bus · CABS = OSU free campus shuttle. Confirm prices and availability with each leasing office.
+</footer>
+
+<script>
+const APARTMENTS = [
+  {
+    id: "luxe-belle",
+    rank: 1,
+    name: "Luxe Belle",
+    address: "1529 N High St, Columbus, OH 43201",
+    distance: "≈10–12 min walk to Math Tower",
+    bus: "On High St — every COTA route; CABS North Residential",
+    rent: "1B/2B/3B — current promo: $100 off monthly on 1B (call for quote)",
+    floorplans: "1B, 2B, 3B (no studio)",
+    gym: "On-site fitness amenities (confirm at tour)",
+    safety: "On busy High St corridor, controlled access",
+    tags: [["green","On High St"], ["amber","No studio"]],
+    website: "https://liveluxebelle.com/apartments/",
+    maps: "https://www.google.com/maps/dir/231+W+18th+Ave,+Columbus,+OH+43210/1529+N+High+St,+Columbus,+OH+43201",
+  },
+  {
+    id: "statehouse-varsity",
+    rank: 2,
+    name: "Statehouse Varsity (formerly The Wellington)",
+    address: "17th Ave & N High St, Columbus, OH",
+    distance: "≈3–5 min walk to Math Tower",
+    bus: "Every major COTA route on High St; CABS Buckeye/East Residential",
+    rent: "Studio/1B — confirm with leasing office",
+    floorplans: "Studio, 1B, 2B+",
+    gym: "24-hr fitness center + yoga studio",
+    safety: "Controlled access, on busy main drag",
+    tags: [["green","Closest"], ["", "On High St"]],
+    website: "https://statehousecolumbus.com/",
+    maps: "https://www.google.com/maps/dir/231+W+18th+Ave,+Columbus,+OH+43210/17th+Ave+%26+N+High+St,+Columbus,+OH",
+  },
+  {
+    id: "view-on-high",
+    rank: 3,
+    name: "The View on High",
+    address: "Directly across High St from campus",
+    distance: "≈5–8 min walk to Math Tower",
+    bus: "All COTA High St routes; CABS lines steps away",
+    rent: "From ~$1,300/person — studios/1B may exceed budget",
+    floorplans: "Studio, 1B–5B, fully furnished",
+    gym: "24/7 fitness center, secure indoor parking",
+    safety: "Controlled access, on High St",
+    tags: [["green","Closest modern"], ["amber","Per-person pricing"]],
+    website: "https://theviewonhigh.com/",
+    maps: "https://www.google.com/maps/dir/231+W+18th+Ave,+Columbus,+OH+43210/The+View+on+High,+Columbus,+OH",
+  },
+  {
+    id: "lumen-on-ninth",
+    rank: 4,
+    name: "Lumen on Ninth",
+    address: "76 E 9th Ave, Columbus, OH 43201",
+    distance: "≈10–12 min walk to Math Tower",
+    bus: "COTA #2 High St; CABS South Campus loop",
+    rent: "Starting ~$929–$1,500 (studios/1B fit budget well)",
+    floorplans: "Studio, 1B–5B, fully furnished",
+    gym: "24-hr fitness center, pool, bike room, in-unit W/D",
+    safety: "Modern build, controlled access",
+    tags: [["green","Best value"], ["", "Furnished"]],
+    website: "https://lumenonninth.com/",
+    maps: "https://www.google.com/maps/dir/231+W+18th+Ave,+Columbus,+OH+43210/76+E+9th+Ave,+Columbus,+OH+43201",
+  },
+  {
+    id: "rambler",
+    rank: 5,
+    name: "Rambler Columbus",
+    address: "222 W Lane Ave, Columbus, OH 43201",
+    distance: "≈12–15 min walk to Math Tower",
+    bus: "Lane Ave corridor; CABS North Residential & Med Center loops",
+    rent: "Studio ~$1,369–$1,899/mo; 12-mo lease starts Aug 20, 2026",
+    floorplans: "Studio–6B, fully furnished",
+    gym: "Full gym + sauna + yoga studio, heated pools, rooftop",
+    safety: "Brand-new (2025), controlled access, well-lit",
+    tags: [["green","Best amenities"], ["amber","Top-end of budget"]],
+    website: "https://ramblercolumbus.com/",
+    maps: "https://www.google.com/maps/dir/231+W+18th+Ave,+Columbus,+OH+43210/222+W+Lane+Ave,+Columbus,+OH+43201",
+  },
+  {
+    id: "ohio-stater",
+    rank: 6,
+    name: "Ohio Stater Building",
+    address: "Across from North OSU dorms",
+    distance: "≈7–10 min walk to Math Tower",
+    bus: "CABS North Express; COTA Lane Ave",
+    rent: "Furnished studios — generally below $1,600",
+    floorplans: "Studio (124 units, recently renovated)",
+    gym: "On-site exercise room, on-site laundry",
+    safety: "Smaller building, quieter feel",
+    tags: [["green","Budget pick"], ["", "Furnished"]],
+    website: "https://www.ohio-stater.com/",
+    maps: "https://www.google.com/maps/dir/231+W+18th+Ave,+Columbus,+OH+43210/Ohio+Stater+Building,+Columbus,+OH",
+  },
+  {
+    id: "lennox-flats",
+    rank: 7,
+    name: "Lennox Flats",
+    address: "Near OSU campus, west side",
+    distance: "≈10–15 min walk to Math Tower",
+    bus: "COTA + CABS within a few blocks",
+    rent: "1B–2B luxury — ask for current quote",
+    floorplans: "1B, 2B",
+    gym: "Fitness center on-site",
+    safety: "Luxury build, controlled access",
+    tags: [["amber","Stretch budget"], ["", "Luxury"]],
+    website: "https://lennoxflats.com/",
+    maps: "https://www.google.com/maps/dir/231+W+18th+Ave,+Columbus,+OH+43210/Lennox+Flats,+Columbus,+OH",
+  },
+  {
+    id: "uncommon",
+    rank: 8,
+    name: "Uncommon Columbus",
+    address: "South campus area",
+    distance: "≈15–20 min walk to Math Tower",
+    bus: "CABS Buckeye + South Campus loops; COTA High St",
+    rent: "1B+ only — ask leasing for current quote",
+    floorplans: "1B–4B",
+    gym: "24/7 fitness center, resort pool, rooftop",
+    safety: "Modern, controlled access; south campus busier",
+    tags: [["amber","Farther from Math Tower"], ["", "Top amenities"]],
+    website: "https://uncommoncolumbus.com/",
+    maps: "https://www.google.com/maps/dir/231+W+18th+Ave,+Columbus,+OH+43210/Uncommon+Columbus,+Columbus,+OH",
+  },
+  {
+    id: "riverwatch",
+    rank: 9,
+    name: "Riverwatch Tower",
+    address: "Across from north campus",
+    distance: "≈10–12 min walk to Math Tower",
+    bus: "CABS North Express + COTA",
+    rent: "Furnished from ~$750/mo (very budget-friendly)",
+    floorplans: "Studio + multi-bed",
+    gym: "Fitness facilities on-site",
+    safety: "11-story tower, controlled access",
+    tags: [["green","Budget backup"], ["", "Furnished"]],
+    website: "https://riverwatchtower.com/",
+    maps: "https://www.google.com/maps/dir/231+W+18th+Ave,+Columbus,+OH+43210/Riverwatch+Tower,+Columbus,+OH",
+  },
+  {
+    id: "lane-lofts",
+    rank: 10,
+    name: "Lane Lofts",
+    address: "1399 W Lane Ave, Columbus, OH 43221 (Upper Arlington)",
+    distance: "≈25–30 min walk; ~1.4 mi — bus/bike recommended",
+    bus: "COTA #2 / Lane Ave routes; CABS does not reach Upper Arlington",
+    rent: "Studio/1B/2B/3B from ~$1,747 (above $1,600 — slight stretch)",
+    floorplans: "Studio, 1B, 2B, 3B (696–1,479 sqft)",
+    gym: "Fitness center, resort-style pool, clubhouse lounge",
+    safety: "Quiet Upper Arlington — generally very safe area",
+    tags: [["amber","Stretch budget"], ["green","Safe area"], ["amber","Farther"]],
+    website: "https://livelanelofts.com/",
+    maps: "https://www.google.com/maps/dir/231+W+18th+Ave,+Columbus,+OH+43210/1399+W+Lane+Ave,+Columbus,+OH+43221",
+  },
+];
+
+const STATUS_OPTIONS = [
+  "Not contacted",
+  "Tour requested",
+  "Tour scheduled",
+  "Toured — interested",
+  "Toured — pass",
+  "Application submitted",
+  "Lease signed",
+  "Rejected / unavailable"
+];
+
+const grid = document.getElementById("grid");
+
+function loadState(id) {
+  try { return JSON.parse(localStorage.getItem("apt_" + id) || "{}"); }
+  catch { return {}; }
+}
+function saveState(id, state) {
+  localStorage.setItem("apt_" + id, JSON.stringify(state));
+}
+
+function makeCard(a) {
+  const state = loadState(a.id);
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `
+    <h2><span class="rank">#${a.rank}</span> ${a.name}</h2>
+    <div class="addr">${a.address}</div>
+    <div>${a.tags.map(t=>`<span class="tag ${t[0]}">${t[1]}</span>`).join("")}</div>
+
+    <div class="row"><span class="k">Distance</span><span>${a.distance}</span></div>
+    <div class="row"><span class="k">Bus / Transit</span><span>${a.bus}</span></div>
+    <div class="row"><span class="k">Rent</span><span>${a.rent}</span></div>
+    <div class="row"><span class="k">Floorplans</span><span>${a.floorplans}</span></div>
+    <div class="row"><span class="k">Gym</span><span>${a.gym}</span></div>
+    <div class="row"><span class="k">Safety</span><span>${a.safety}</span></div>
+
+    <div class="links">
+      <a href="${a.website}" target="_blank" rel="noopener">Leasing website ↗</a>
+      <a href="${a.maps}" target="_blank" rel="noopener">Walking route ↗</a>
+    </div>
+
+    <div class="status">
+      <select data-id="${a.id}" data-field="status">
+        ${STATUS_OPTIONS.map(o => `<option value="${o}" ${state.status===o?"selected":""}>${o}</option>`).join("")}
+      </select>
+      <input type="date" data-id="${a.id}" data-field="tourDate" value="${state.tourDate||""}" />
+    </div>
+
+    <textarea data-id="${a.id}" data-field="notes" placeholder="Your notes — first impression, leasing agent name, quoted rent, what to ask...">${state.notes||""}</textarea>
+    <div class="saved" id="saved-${a.id}"></div>
+  `;
+  return card;
+}
+
+APARTMENTS.forEach(a => grid.appendChild(makeCard(a)));
+
+// Auto-save handler
+document.addEventListener("input", e => {
+  const id = e.target.dataset.id;
+  const field = e.target.dataset.field;
+  if (!id || !field) return;
+  const state = loadState(id);
+  state[field] = e.target.value;
+  state.lastSaved = new Date().toLocaleString();
+  saveState(id, state);
+  const note = document.getElementById("saved-" + id);
+  if (note) {
+    note.textContent = "Saved " + state.lastSaved;
+    clearTimeout(note._t);
+    note._t = setTimeout(() => note.textContent = "", 2500);
+  }
+});
+document.addEventListener("change", e => {
+  if (e.target.dataset && e.target.dataset.id) {
+    e.target.dispatchEvent(new Event("input", {bubbles:true}));
+  }
+});
+
+function exportNotes() {
+  const data = {};
+  APARTMENTS.forEach(a => data[a.id] = { name: a.name, ...loadState(a.id) });
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "apartment-notes-" + new Date().toISOString().slice(0,10) + ".json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importNotes(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!confirm("Import will MERGE these notes into your tracker. Existing notes for the same property will be overwritten. Continue?")) return;
+      Object.keys(data).forEach(id => {
+        const incoming = data[id];
+        const current = loadState(id);
+        const merged = { ...current, ...incoming };
+        delete merged.name;
+        saveState(id, merged);
+      });
+      alert("Notes imported. Reloading...");
+      location.reload();
+    } catch (err) {
+      alert("Could not import: " + err.message);
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = "";
+}
+
+function printPage() { window.print(); }
+
+function clearAll() {
+  if (!confirm("Clear all your notes and statuses? This cannot be undone.")) return;
+  APARTMENTS.forEach(a => localStorage.removeItem("apt_" + a.id));
+  location.reload();
+}
+</script>
+</body>
+</html>
